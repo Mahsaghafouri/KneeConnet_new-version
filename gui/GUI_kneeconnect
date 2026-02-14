@@ -1,0 +1,1097 @@
+import sys
+import cv2
+import time
+import json  # Added for JSON handling
+import os    # Added for file checking
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+                             QHBoxLayout, QPushButton, QLabel, QFrame, 
+                             QSizePolicy, QInputDialog, QStyle, QDialog, 
+                             QCheckBox, QTextEdit, QLineEdit, QFormLayout, 
+                             QComboBox, QFileDialog, QMessageBox, QScrollArea,
+                             QStackedWidget, QListWidget, QGroupBox, QGridLayout,
+                             QTableWidget, QTableWidgetItem, QHeaderView) # Added Table widgets
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, pyqtSlot, QSize, QRect
+from PyQt6.QtGui import QImage, QPixmap, QIcon, QFont, QColor, QPalette, QPainter, QPen, QBrush
+
+# --- THEME CONFIGURATION ---
+class ModernTheme:
+    BG_DARK = "#2b2b2b"
+    BG_LIGHT = "#3b3b3b"
+    ACCENT_PRIMARY = "#1abc9c"  # Teal
+    ACCENT_HOVER = "#16a085"
+    ACCENT_DANGER = "#e74c3c"   # Red
+    ACCENT_SUCCESS = "#2ecc71"  # Green
+    TEXT_WHITE = "#ecf0f1"
+    TEXT_GRAY = "#bdc3c7"
+    BORDER_RADIUS = "8px"
+    
+    STYLESHEET = f"""
+        QMainWindow, QDialog, QWidget {{
+            background-color: {BG_DARK};
+            color: {TEXT_WHITE};
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 14px;
+        }}
+        /* Frames */
+        QFrame {{
+            border: none;
+            border-radius: {BORDER_RADIUS};
+        }}
+        QFrame#Card {{
+            background-color: {BG_LIGHT};
+            border: 1px solid #4a4a4a;
+        }}
+        
+        /* Buttons */
+        QPushButton {{
+            background-color: {BG_LIGHT};
+            border: 1px solid #555;
+            padding: 8px 16px;
+            border-radius: 6px;
+            color: {TEXT_WHITE};
+        }}
+        QPushButton:hover {{
+            background-color: #505050;
+        }}
+        QPushButton#Primary {{
+            background-color: {ACCENT_PRIMARY};
+            border: none;
+            font-weight: bold;
+            color: white;
+        }}
+        QPushButton#Primary:hover {{
+            background-color: {ACCENT_HOVER};
+        }}
+        QPushButton#Danger {{
+            background-color: {ACCENT_DANGER};
+            border: none;
+            font-weight: bold;
+        }}
+        QPushButton#Success {{
+            background-color: {ACCENT_SUCCESS};
+            border: none;
+            font-weight: bold;
+            color: white;
+        }}
+        QPushButton:disabled {{
+            background-color: #444;
+            color: #777;
+        }}
+        
+        /* Inputs */
+        QLineEdit, QTextEdit, QComboBox, QSpinBox {{
+            background-color: #222;
+            border: 1px solid #555;
+            padding: 8px;
+            border-radius: 4px;
+            color: white;
+        }}
+        QLineEdit:focus, QTextEdit:focus {{
+            border: 1px solid {ACCENT_PRIMARY};
+        }}
+        
+        /* List Widget (Sidebar) */
+        QListWidget {{
+            background-color: {BG_LIGHT};
+            border: none;
+            outline: none;
+        }}
+        QListWidget::item {{
+            padding: 12px;
+            margin: 4px;
+            border-radius: 6px;
+        }}
+        QListWidget::item:selected {{
+            background-color: {ACCENT_PRIMARY};
+            color: white;
+        }}
+        QListWidget::item:hover {{
+            background-color: #505050;
+        }}
+        
+        /* Labels */
+        QLabel#Header {{
+            font-size: 24px;
+            font-weight: bold;
+            color: {ACCENT_PRIMARY};
+        }}
+        QLabel#SubHeader {{
+            font-size: 18px;
+            font-weight: bold;
+            color: {TEXT_WHITE};
+            margin-bottom: 10px;
+        }}
+        QGroupBox {{
+            border: 1px solid #555;
+            border-radius: 6px;
+            margin-top: 1em;
+            font-weight: bold;
+        }}
+        QGroupBox::title {{
+            subcontrol-origin: margin;
+            left: 10px;
+            padding: 0 3px;
+        }}
+        
+        /* Table Widget */
+        QTableWidget {{
+            background-color: #222;
+            gridline-color: #555;
+            border: 1px solid #555;
+        }}
+        QHeaderView::section {{
+            background-color: {BG_LIGHT};
+            padding: 5px;
+            border: 1px solid #555;
+        }}
+    """
+
+# --- GLOBAL DATA STORE ---
+PATIENT_DATA_STORE = {
+    "merged_info": {}, "exercise_schedule": {}, "consent": {}, "progress": {}, "setup_videos": []
+}
+
+# --- ICON GENERATOR ---
+def create_app_icon():
+    size = 64
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    
+    # Draw Background Circle
+    painter.setBrush(QBrush(QColor(ModernTheme.ACCENT_PRIMARY)))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.drawEllipse(2, 2, size-4, size-4)
+    
+    # Draw "K" Text
+    painter.setPen(QPen(Qt.GlobalColor.white))
+    font = QFont("Segoe UI", 30, QFont.Weight.Bold)
+    painter.setFont(font)
+    painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "K")
+    
+    painter.end()
+    return QIcon(pixmap)
+
+# --- CUSTOM WIDGETS ---
+class HeaderLabel(QLabel):
+    def __init__(self, text):
+        super().__init__(text)
+        self.setObjectName("Header")
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+class SubHeaderLabel(QLabel):
+    def __init__(self, text):
+        super().__init__(text)
+        self.setObjectName("SubHeader")
+
+# --- NEW: STABLE CAMERA DISPLAY WIDGET ---
+class CameraDisplayWidget(QWidget):
+    def __init__(self, placeholder_text="Camera Offline"):
+        super().__init__()
+        self.image = None
+        self.placeholder_text = placeholder_text
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # Style matches the theme
+        self.setStyleSheet(f"background-color: black; border-radius: {ModernTheme.BORDER_RADIUS}; border: 2px solid #555;")
+
+    def set_image(self, qt_img):
+        self.image = qt_img
+        self.update()  # Trigger paintEvent
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        if self.image:
+            # Scale image to fit widget size while keeping aspect ratio
+            scaled = self.image.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            
+            # Center the image
+            x = (self.width() - scaled.width()) // 2
+            y = (self.height() - scaled.height()) // 2
+            painter.drawImage(x, y, scaled)
+        else:
+            # Draw placeholder text
+            painter.setPen(QPen(QColor(ModernTheme.TEXT_WHITE)))
+            painter.setFont(QFont("Segoe UI", 12))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.placeholder_text)
+        painter.end()
+
+# --- SAFE CAMERA THREAD ---
+class CameraThread(QThread):
+    change_pixmap_signal = pyqtSignal(QImage)
+
+    def __init__(self):
+        super().__init__()
+        self._run_flag = True
+
+    def run(self):
+        cap = cv2.VideoCapture(0)
+        while self._run_flag:
+            ret, cv_img = cap.read()
+            if ret:
+                rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+                h, w, ch = rgb_image.shape
+                bytes_per_line = ch * w
+                convert_to_Qt_format = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+                self.change_pixmap_signal.emit(convert_to_Qt_format)
+            else:
+                self.msleep(100)
+        cap.release()
+
+    def stop(self):
+        self._run_flag = False
+        self.wait(1000)
+
+# --- 1. MODERN TERMS WINDOW ---
+class TermsDialog(QDialog):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Welcome to Knee Connect")
+        self.setWindowIcon(create_app_icon()) 
+        self.setFixedSize(600, 500)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(30, 30, 30, 30)
+        
+        title = HeaderLabel("TERMS OF SERVICE")
+        layout.addWidget(title)
+        
+        self.text_area = QTextEdit()
+        self.text_area.setReadOnly(True)
+        self.text_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.text_area.setStyleSheet(f"background-color: {ModernTheme.BG_LIGHT}; padding: 10px; border-radius: 8px;")
+        self.text_area.setText(
+            "<h3>KNEE CONNECT SOFTWARE LICENSE</h3>"
+            "<p>Last Updated: 2024</p>"
+            "<br>"
+            "<p><b>1. Acceptance:</b> By accessing this application, you confirm that you are an authorized medical professional.</p>"
+            "<p><b>2. Data Privacy:</b> You acknowledge that all patient data entered is stored locally in memory during this session. "
+            "Ensure compliance with GDPR/HIPAA when exporting or saving data externally.</p>"
+            "<p><b>3. Safety Disclaimer:</b> This computer vision tool is an aid, not a replacement for professional diagnosis. "
+            "Always verify range-of-motion metrics manually.</p>"
+            "<p><b>4. Liability:</b> The developers accept no liability for injury or misdiagnosis resulting from the misuse of this software.</p>"
+            "<br><br><br><br><br>"
+            "<p><i>Scroll to the bottom to agree.</i></p>"
+        )
+        layout.addWidget(self.text_area)
+        
+        chk_layout = QHBoxLayout()
+        self.chk_agree = QCheckBox("I have read and agree to the Terms & Conditions")
+        self.chk_agree.setStyleSheet(f"font-size: 16px; spacing: 10px;")
+        self.chk_agree.stateChanged.connect(self.toggle_button)
+        chk_layout.addStretch()
+        chk_layout.addWidget(self.chk_agree)
+        chk_layout.addStretch()
+        layout.addLayout(chk_layout)
+        
+        self.btn_proceed = QPushButton("ENTER APPLICATION")
+        self.btn_proceed.setObjectName("Primary")
+        self.btn_proceed.setFixedSize(200, 50)
+        self.btn_proceed.setEnabled(False)
+        self.btn_proceed.setCursor(Qt.CursorShape.ForbiddenCursor)
+        self.btn_proceed.clicked.connect(self.accept)
+        self.btn_proceed.setStyleSheet(f"background-color: #555; color: #888; border: none;") 
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.btn_proceed)
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
+
+    def toggle_button(self):
+        if self.chk_agree.isChecked():
+            self.btn_proceed.setEnabled(True)
+            self.btn_proceed.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.btn_proceed.setStyleSheet(f"""
+                background-color: {ModernTheme.ACCENT_PRIMARY}; 
+                color: white; 
+                border-radius: 25px; 
+                font-weight: bold; font-size: 16px;
+            """)
+        else:
+            self.btn_proceed.setEnabled(False)
+            self.btn_proceed.setCursor(Qt.CursorShape.ForbiddenCursor)
+            self.btn_proceed.setStyleSheet(f"background-color: #555; color: #888; border-radius: 25px;")
+
+# --- MERGED PATIENT FORM (MODIFIED) ---
+class MergedPatientForm(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("background-color: transparent;")
+        
+        content = QWidget()
+        content.setStyleSheet("background-color: transparent;")
+        main_form_layout = QVBoxLayout(content)
+        
+        main_form_layout.addWidget(SubHeaderLabel("Appointment & Patient Identity"))
+        
+        grid = QGridLayout()
+        grid.setSpacing(15)
+        
+        grid.addWidget(QLabel("First Name:"), 0, 0)
+        self.fname = QLineEdit()
+        self.fname.editingFinished.connect(self.check_existing_patient) # Check on finish
+        grid.addWidget(self.fname, 0, 1)
+        
+        grid.addWidget(QLabel("Last Name:"), 0, 2)
+        self.lname = QLineEdit()
+        self.lname.editingFinished.connect(self.check_existing_patient) # Check on finish
+        grid.addWidget(self.lname, 0, 3)
+        
+        grid.addWidget(QLabel("Patient ID:"), 1, 0)
+        self.pid = QLineEdit()
+        grid.addWidget(self.pid, 1, 1)
+        
+        grid.addWidget(QLabel("Age:"), 1, 2)
+        self.age = QLineEdit()
+        self.age.setFixedWidth(60) 
+        self.age.setPlaceholderText("##")
+        grid.addWidget(self.age, 1, 3, Qt.AlignmentFlag.AlignLeft)
+        
+        grid.addWidget(QLabel("Mobile:"), 2, 0)
+        self.mobile = QLineEdit()
+        grid.addWidget(self.mobile, 2, 1)
+        
+        grid.addWidget(QLabel("Gender:"), 2, 2)
+        self.gender = QComboBox()
+        self.gender.addItems(["Male", "Female", "Other"])
+        grid.addWidget(self.gender, 2, 3)
+        
+        main_form_layout.addLayout(grid)
+        
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setStyleSheet("background-color: #555;")
+        main_form_layout.addWidget(line)
+        
+        main_form_layout.addWidget(SubHeaderLabel("Clinical Information"))
+        
+        grid2 = QGridLayout()
+        grid2.setSpacing(15)
+        
+        grid2.addWidget(QLabel("Surgeon:"), 0, 0)
+        self.surgeon = QLineEdit()
+        grid2.addWidget(self.surgeon, 0, 1)
+        
+        grid2.addWidget(QLabel("Physiotherapist:"), 0, 2)
+        self.physio = QLineEdit()
+        grid2.addWidget(self.physio, 0, 3)
+        
+        grid2.addWidget(QLabel("Height (cm):"), 1, 0)
+        self.height = QLineEdit()
+        self.height.setFixedWidth(80)
+        grid2.addWidget(self.height, 1, 1, Qt.AlignmentFlag.AlignLeft)
+        
+        grid2.addWidget(QLabel("Weight (kg):"), 1, 2)
+        self.weight = QLineEdit()
+        self.weight.setFixedWidth(80)
+        grid2.addWidget(self.weight, 1, 3, Qt.AlignmentFlag.AlignLeft)
+        
+        main_form_layout.addLayout(grid2)
+        
+        main_form_layout.addWidget(QLabel("Type of Surgery and Date:"))
+        self.surgery_date = QLineEdit()
+        main_form_layout.addWidget(self.surgery_date)
+
+        main_form_layout.addWidget(QLabel("Nutritional Factors Affecting Healing:"))
+        self.nutrition = QTextEdit()
+        self.nutrition.setMaximumHeight(80)
+        main_form_layout.addWidget(self.nutrition)
+
+        main_form_layout.addWidget(QLabel("Functional Goals:"))
+        self.func_goals = QTextEdit()
+        self.func_goals.setMaximumHeight(80)
+        main_form_layout.addWidget(self.func_goals)
+
+        main_form_layout.addWidget(QLabel("Medical History:"))
+        self.history = QTextEdit()
+        self.history.setMaximumHeight(80)
+        main_form_layout.addWidget(self.history)
+        
+        main_form_layout.addWidget(QLabel("Current Medication:"))
+        self.meds = QTextEdit()
+        self.meds.setMaximumHeight(80)
+        main_form_layout.addWidget(self.meds)
+        
+        btn_save = QPushButton("Save Patient Record")
+        btn_save.setObjectName("Primary")
+        btn_save.clicked.connect(self.save_data)
+        main_form_layout.addWidget(btn_save, alignment=Qt.AlignmentFlag.AlignRight)
+        
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
+
+    def check_existing_patient(self):
+        # Only check if both names are entered
+        f_txt = self.fname.text().strip()
+        l_txt = self.lname.text().strip()
+        
+        if not f_txt or not l_txt:
+            return
+
+        filename = f"{f_txt}_{l_txt}.json"
+        
+        if os.path.exists(filename):
+            try:
+                with open(filename, 'r') as f:
+                    data = json.load(f)
+                
+                # Populate fields
+                self.pid.setText(data.get("id", ""))
+                self.age.setText(data.get("age", ""))
+                self.mobile.setText(data.get("mobile", ""))
+                self.gender.setCurrentText(data.get("gender", "Male"))
+                self.surgeon.setText(data.get("surgeon", ""))
+                self.physio.setText(data.get("physio", ""))
+                self.height.setText(data.get("height", ""))
+                self.weight.setText(data.get("weight", ""))
+                self.surgery_date.setText(data.get("surgery_date", ""))
+                self.nutrition.setText(data.get("nutrition", ""))
+                self.func_goals.setText(data.get("goals", ""))
+                self.history.setText(data.get("history", ""))
+                self.meds.setText(data.get("meds", ""))
+                
+                # Apply "Shady" look (Grey text to indicate old data)
+                shady_style = "color: #999; background-color: #222; border: 1px solid #444;"
+                fields = [self.pid, self.age, self.mobile, self.surgeon, self.physio, 
+                          self.height, self.weight, self.surgery_date, self.nutrition, 
+                          self.func_goals, self.history, self.meds]
+                
+                for field in fields:
+                    field.setStyleSheet(shady_style)
+                    
+            except Exception as e:
+                print(f"Error loading file: {e}")
+
+    def save_data(self):
+        f_txt = self.fname.text().strip()
+        l_txt = self.lname.text().strip()
+        
+        if not f_txt or not l_txt:
+            QMessageBox.warning(self, "Error", "First and Last Name are required to save.")
+            return
+
+        data = {
+            "name": f"{f_txt} {l_txt}",
+            "id": self.pid.text(),
+            "age": self.age.text(),
+            "mobile": self.mobile.text(),
+            "gender": self.gender.currentText(),
+            "surgeon": self.surgeon.text(),
+            "physio": self.physio.text(),
+            "height": self.height.text(),
+            "weight": self.weight.text(),
+            "surgery_date": self.surgery_date.text(),
+            "nutrition": self.nutrition.toPlainText(),
+            "goals": self.func_goals.toPlainText(),
+            "history": self.history.toPlainText(),
+            "meds": self.meds.toPlainText()
+        }
+        
+        # Save to memory
+        PATIENT_DATA_STORE["merged_info"] = data
+        
+        # Save to JSON file
+        filename = f"{f_txt}_{l_txt}.json"
+        try:
+            with open(filename, 'w') as f:
+                json.dump(data, f, indent=4)
+            QMessageBox.information(self, "Success", f"Patient record saved to {filename}.")
+            
+            # Reset style to normal after saving (optional, but good feedback)
+            normal_style = "color: white; background-color: #222; border: 1px solid #555;"
+            fields = [self.pid, self.age, self.mobile, self.surgeon, self.physio, 
+                      self.height, self.weight, self.surgery_date, self.nutrition, 
+                      self.func_goals, self.history, self.meds]
+            for field in fields:
+                field.setStyleSheet(normal_style)
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not save file: {e}")
+
+# --- SETUP / VIDEO PAGE ---
+class VideoSlotWidget(QFrame):
+    def __init__(self, index, image=None):
+        super().__init__()
+        self.setObjectName("Card")
+        self.setFixedSize(160, 140)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+        
+        self.img_lbl = QLabel()
+        self.img_lbl.setStyleSheet("background-color: black; border-radius: 4px;")
+        self.img_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        if image:
+             self.img_lbl.setPixmap(QPixmap.fromImage(image).scaled(150, 100, Qt.AspectRatioMode.KeepAspectRatio))
+        else:
+            self.img_lbl.setText(f"Empty Slot {index}")
+            
+        layout.addWidget(self.img_lbl)
+        
+        self.chk = QCheckBox(f"Video {index}")
+        layout.addWidget(self.chk)
+
+class SetupPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.layout = QHBoxLayout(self)
+        self.video_slots = []
+        self.recording = False
+        self.current_frame = None
+        
+        # --- LEFT PANEL ---
+        left_panel = QWidget()
+        left_panel.setFixedWidth(250)
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(0, 0, 10, 0)
+        
+        left_layout.addWidget(QLabel("Select Method:"))
+        self.method_combo = QComboBox()
+        self.method_combo.addItems(["Option 1 (Standard)", "Option 2 (Advanced)", "Option 3 (AI)", "Option 4 (Manual)"])
+        left_layout.addWidget(self.method_combo)
+        
+        left_layout.addSpacing(15)
+        
+        left_layout.addWidget(SubHeaderLabel("Videos"))
+        
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        
+        self.video_container = QWidget()
+        self.video_layout = QVBoxLayout(self.video_container)
+        self.video_layout.setSpacing(10)
+        self.video_layout.addStretch() 
+        
+        self.scroll_area.setWidget(self.video_container)
+        left_layout.addWidget(self.scroll_area)
+        
+        self.btn_save_setup = QPushButton("Save")
+        self.btn_save_setup.clicked.connect(lambda: QMessageBox.information(self, "Saved", "Setup Configuration Saved"))
+        
+        self.btn_init = QPushButton("Initialize")
+        self.btn_init.setEnabled(False)
+        self.btn_init.clicked.connect(self.initialize_videos)
+        
+        left_layout.addWidget(self.btn_save_setup)
+        left_layout.addWidget(self.btn_init)
+        
+        self.layout.addWidget(left_panel)
+        
+        # --- CENTER PANEL (Updated) ---
+        center_panel = QVBoxLayout()
+        
+        # 1. NEW: Angle Sections Grid
+        angle_grid = QGridLayout()
+        angle_grid.setSpacing(10)
+        
+        self.angle_vars = []   # List to store variable labels to update them easily
+        self.angle_inputs = [] # List to store inputs
+        
+        # Create 4 columns for Angle 1, Angle 2, Angle 3, Angle 4
+        for i in range(4):
+            # Row 0: Title
+            title = QLabel(f"Angle {i+1}")
+            title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            title.setStyleSheet(f"color: {ModernTheme.ACCENT_PRIMARY}; font-weight: bold;")
+            angle_grid.addWidget(title, 0, i)
+            
+            # Row 1: Variable Display (Number shown by code)
+            var_lbl = QLabel("0.0") 
+            var_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            var_lbl.setStyleSheet("font-size: 16px; font-weight: bold; color: white;")
+            self.angle_vars.append(var_lbl)
+            angle_grid.addWidget(var_lbl, 1, i)
+            
+            # Row 2: Input Field (Place to enter number)
+            inp = QLineEdit()
+            inp.setPlaceholderText("#")
+            inp.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            inp.setFixedWidth(80)
+            self.angle_inputs.append(inp)
+            # Center the input field in the grid cell
+            input_container = QWidget()
+            ic_layout = QHBoxLayout(input_container)
+            ic_layout.setContentsMargins(0,0,0,0)
+            ic_layout.addStretch()
+            ic_layout.addWidget(inp)
+            ic_layout.addStretch()
+            angle_grid.addWidget(input_container, 2, i)
+            
+        center_panel.addLayout(angle_grid)
+        center_panel.addSpacing(15)
+
+        # 2. Camera Frame (Moved Down)
+        self.cam_frame = CameraDisplayWidget("Camera Offline")
+        center_panel.addWidget(self.cam_frame)
+        
+        # 3. Start/Stop Button
+        self.btn_rec = QPushButton("START")
+        self.btn_rec.setObjectName("Success") 
+        self.btn_rec.setFixedSize(200, 50)
+        self.btn_rec.clicked.connect(self.toggle_recording)
+        center_panel.addWidget(self.btn_rec, alignment=Qt.AlignmentFlag.AlignCenter)
+        
+        self.layout.addLayout(center_panel)
+
+        self.thread = None
+
+    def start_camera(self):
+        if self.thread is None:
+            self.thread = CameraThread()
+            self.thread.change_pixmap_signal.connect(self.update_image)
+            self.thread.start()
+
+    def stop_camera(self):
+        if self.thread:
+            try:
+                self.thread.change_pixmap_signal.disconnect()
+            except:
+                pass
+            self.thread.stop()
+            self.thread = None
+
+    @pyqtSlot(QImage)
+    def update_image(self, qt_img):
+        self.current_frame = qt_img
+        self.cam_frame.set_image(qt_img)
+
+    def toggle_recording(self):
+        if not self.recording:
+            self.recording = True
+            self.btn_rec.setText("STOP")
+            self.btn_rec.setObjectName("Danger") 
+            self.btn_rec.setStyleSheet(f"background-color: {ModernTheme.ACCENT_DANGER}; color: white; font-weight: bold; border-radius: 6px; padding: 8px;")
+        else:
+            self.recording = False
+            self.btn_rec.setText("START")
+            self.btn_rec.setObjectName("Success") 
+            self.btn_rec.setStyleSheet(f"background-color: {ModernTheme.ACCENT_SUCCESS}; color: white; font-weight: bold; border-radius: 6px; padding: 8px;")
+            self.add_recorded_video()
+
+    def add_recorded_video(self):
+        idx = len(self.video_slots) + 1
+        slot = VideoSlotWidget(idx, self.current_frame)
+        slot.chk.stateChanged.connect(self.check_selection)
+        
+        self.video_layout.insertWidget(self.video_layout.count() - 1, slot)
+        self.video_slots.append(slot)
+
+    def check_selection(self):
+        any_checked = any(slot.chk.isChecked() for slot in self.video_slots)
+        self.btn_init.setEnabled(any_checked)
+        if any_checked:
+            self.btn_init.setObjectName("Primary")
+            self.btn_init.setStyleSheet(f"background-color: {ModernTheme.ACCENT_PRIMARY}; color: white;")
+        else:
+            self.btn_init.setObjectName("")
+            self.btn_init.setStyleSheet("background-color: #444; color: #777;")
+
+    def initialize_videos(self):
+        count = sum(1 for slot in self.video_slots if slot.chk.isChecked())
+        QMessageBox.information(self, "Initialized", f"{count} videos have been initialized and saved to the program.")
+
+# --- GENERIC FORM WIDGET ---
+class GenericFormWidget(QWidget):
+    def __init__(self, title, fields, save_key):
+        super().__init__()
+        self.save_key = save_key
+        self.inputs = {}
+        
+        layout = QVBoxLayout(self)
+        
+        header = SubHeaderLabel(title)
+        layout.addWidget(header)
+        
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("background-color: transparent;")
+        
+        content = QWidget()
+        content.setStyleSheet("background-color: transparent;")
+        form_layout = QFormLayout(content)
+        form_layout.setSpacing(15)
+        
+        for label, widget_type in fields:
+            lbl = QLabel(label)
+            lbl.setStyleSheet("color: #bdc3c7; font-weight: bold;")
+            
+            if widget_type == "text":
+                inp = QLineEdit()
+            elif widget_type == "area":
+                inp = QTextEdit()
+                inp.setMaximumHeight(100)
+            elif isinstance(widget_type, list):
+                inp = QComboBox()
+                inp.addItems(widget_type)
+            else:
+                inp = QLineEdit()
+                
+            form_layout.addRow(lbl, inp)
+            self.inputs[label] = inp
+            
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
+        
+        btn_save = QPushButton("Save Changes")
+        btn_save.setObjectName("Primary")
+        btn_save.clicked.connect(self.save_data)
+        layout.addWidget(btn_save, alignment=Qt.AlignmentFlag.AlignRight)
+
+    def save_data(self):
+        data = {}
+        for k, v in self.inputs.items():
+            if isinstance(v, QLineEdit): data[k] = v.text()
+            elif isinstance(v, QTextEdit): data[k] = v.toPlainText()
+            elif isinstance(v, QComboBox): data[k] = v.currentText()
+            
+        PATIENT_DATA_STORE[self.save_key] = data
+        QMessageBox.information(self, "Success", "Data saved successfully!")
+
+# --- EXERCISE FORM (MODIFIED) ---
+class ExerciseForm(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.addWidget(SubHeaderLabel("Exercise Schedule"))
+        
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        form = QVBoxLayout(content)
+        
+        # 1. Exercise Type Selection (Changed from Checkboxes to ComboBox)
+        grp_type = QGroupBox("Exercise Type")
+        gl = QVBoxLayout()
+        self.type_combo = QComboBox()
+        self.type_combo.addItems([
+            "Rehabilitation - Stage 1", 
+            "Rehabilitation - Stage 2", 
+            "Strength Training", 
+            "Mobility Work", 
+            "Flexibility"
+        ])
+        gl.addWidget(self.type_combo)
+        grp_type.setLayout(gl)
+        form.addWidget(grp_type)
+        
+        # 2. Session Details & Add Button
+        grp_det = QGroupBox("Session Details")
+        fl = QFormLayout()
+        self.sess = QLineEdit()
+        self.reps = QLineEdit()
+        fl.addRow("Number of Sessions:", self.sess)
+        fl.addRow("Repetitions/Duration:", self.reps)
+        
+        # Add Button
+        self.btn_add = QPushButton("Add to Schedule")
+        self.btn_add.setObjectName("Success")
+        self.btn_add.clicked.connect(self.add_to_table)
+        fl.addRow(self.btn_add)
+        
+        grp_det.setLayout(fl)
+        form.addWidget(grp_det)
+        
+        # 3. Schedule Table (The "Table" Requirement)
+        form.addWidget(QLabel("Current Schedule:"))
+        self.table = QTableWidget()
+        self.table.setColumnCount(3)
+        self.table.setHorizontalHeaderLabels(["Exercise Type", "Sessions", "Reps/Duration"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.setMinimumHeight(150)
+        form.addWidget(self.table)
+        
+        form.addWidget(QLabel("Specific Notes / Patient Issues:"))
+        self.notes = QTextEdit()
+        form.addWidget(self.notes)
+        
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
+        
+        btn = QPushButton("Save Schedule")
+        btn.setObjectName("Primary")
+        btn.clicked.connect(self.save)
+        layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignRight)
+        
+    def add_to_table(self):
+        # Validation
+        if not self.sess.text() or not self.reps.text():
+            QMessageBox.warning(self, "Input Error", "Please fill in sessions and repetitions.")
+            return
+            
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        
+        self.table.setItem(row, 0, QTableWidgetItem(self.type_combo.currentText()))
+        self.table.setItem(row, 1, QTableWidgetItem(self.sess.text()))
+        self.table.setItem(row, 2, QTableWidgetItem(self.reps.text()))
+        
+        # Clear inputs
+        self.sess.clear()
+        self.reps.clear()
+        
+    def save(self):
+        PATIENT_DATA_STORE["exercise_schedule"] = "Updated"
+        QMessageBox.information(self, "Saved", "Schedule updated.")
+
+# --- 2. PATIENT DASHBOARD (Updated) ---
+class PatientDashboard(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Patient Management Dashboard")
+        self.setWindowIcon(create_app_icon()) 
+        self.resize(1000, 700)
+        
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # --- LEFT SIDEBAR ---
+        sidebar = QFrame()
+        sidebar.setStyleSheet(f"background-color: {ModernTheme.BG_LIGHT}; border-right: 1px solid #444;")
+        sidebar.setFixedWidth(220)
+        sidebar_layout = QVBoxLayout(sidebar)
+        
+        sidebar_layout.addWidget(HeaderLabel("MENU"))
+        
+        self.list_widget = QListWidget()
+        items = [
+            "Merged Information", 
+            "Setup", 
+            "Exercise Schedule", 
+            "Consent Form", 
+            "Progress Report"
+        ]
+        self.list_widget.addItems(items)
+        self.list_widget.setCurrentRow(0)
+        self.list_widget.currentRowChanged.connect(self.display_page)
+        
+        self.list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.list_widget.setFixedHeight(400)
+        
+        sidebar_layout.addWidget(self.list_widget)
+        sidebar_layout.addStretch()
+        
+        btn_back = QPushButton("Back to Camera")
+        btn_back.setStyleSheet("background-color: #555;")
+        btn_back.clicked.connect(self.accept)
+        sidebar_layout.addWidget(btn_back)
+        
+        main_layout.addWidget(sidebar)
+        
+        # --- RIGHT CONTENT AREA ---
+        content_area = QFrame()
+        content_layout = QVBoxLayout(content_area)
+        content_layout.setContentsMargins(20, 20, 20, 20)
+        
+        self.stack = QStackedWidget()
+        
+        self.stack.addWidget(MergedPatientForm())
+        
+        self.setup_page = SetupPage()
+        self.stack.addWidget(self.setup_page)
+        
+        self.stack.addWidget(ExerciseForm())
+        
+        consent_widget = QWidget()
+        cl = QVBoxLayout(consent_widget)
+        cl.addWidget(SubHeaderLabel("Patient Consent"))
+        btn_upload = QPushButton("Upload Consent PDF/Image")
+        cl.addWidget(btn_upload)
+        cl.addWidget(QLabel("Description:"))
+        desc = QTextEdit()
+        cl.addWidget(desc)
+        btn_save_c = QPushButton("Save")
+        btn_save_c.setObjectName("Primary")
+        cl.addWidget(btn_save_c, alignment=Qt.AlignmentFlag.AlignRight)
+        cl.addStretch()
+        self.stack.addWidget(consent_widget)
+        
+        self.stack.addWidget(GenericFormWidget("Progress Report", [
+            ("Changes in Pain/Function", "area"),
+            ("Range of Motion Improvement", "area")
+        ], "progress"))
+
+        content_layout.addWidget(self.stack)
+        main_layout.addWidget(content_area)
+
+    def display_page(self, index):
+        self.stack.setCurrentIndex(index)
+        
+        # Handle Camera Transitions Safely
+        if index == 1:
+            self.setup_page.start_camera()
+        else:
+            self.setup_page.stop_camera()
+            
+    def closeEvent(self, event):
+        self.setup_page.stop_camera()
+        super().closeEvent(event)
+
+# --- 4. MAIN WINDOW ---
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("KneeConnect - Professional Edition")
+        self.setWindowIcon(create_app_icon()) 
+        self.resize(1100, 700)
+        
+        central = QWidget()
+        self.setCentralWidget(central)
+        main_vbox = QVBoxLayout(central)
+        main_vbox.setSpacing(20)
+        main_vbox.setContentsMargins(20, 20, 20, 20)
+        
+        top_bar = QHBoxLayout()
+        logo = QLabel("🟢 KNEE CONNECT")
+        logo.setStyleSheet(f"font-size: 20px; font-weight: bold; color: {ModernTheme.ACCENT_PRIMARY};")
+        top_bar.addWidget(logo)
+        top_bar.addStretch()
+        
+        self.lbl_status = QLabel("System Ready")
+        self.lbl_status.setStyleSheet("color: #777;")
+        top_bar.addWidget(self.lbl_status)
+        main_vbox.addLayout(top_bar)
+        
+        content_split = QHBoxLayout()
+        
+        self.cam_frame = QFrame()
+        self.cam_frame.setObjectName("Card")
+        cam_layout = QVBoxLayout(self.cam_frame)
+        
+        self.feed_label = QLabel("Initializing Camera...")
+        self.feed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.feed_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        cam_layout.addWidget(self.feed_label)
+        
+        content_split.addWidget(self.cam_frame, stretch=3)
+        
+        instr_frame = QFrame()
+        instr_frame.setObjectName("Card")
+        instr_layout = QVBoxLayout(instr_frame)
+        instr_lbl = QLabel("Instructional Video\nPlaceholder")
+        instr_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        instr_lbl.setStyleSheet("color: #555; font-size: 18px; font-weight: bold;")
+        instr_layout.addWidget(instr_lbl)
+        
+        content_split.addWidget(instr_frame, stretch=2)
+        
+        main_vbox.addLayout(content_split, stretch=1)
+        
+        control_bar = QFrame()
+        control_bar.setObjectName("Card")
+        control_bar.setStyleSheet(f"background-color: {ModernTheme.BG_LIGHT}; border-radius: 40px;")
+        control_bar.setFixedHeight(80)
+        
+        ctrl_layout = QHBoxLayout(control_bar)
+        ctrl_layout.setContentsMargins(30, 10, 30, 10)
+        
+        self.btn_exercise = QPushButton("Select Exercise")
+        self.btn_exercise.setFixedWidth(140)
+        ctrl_layout.addWidget(self.btn_exercise)
+        
+        ctrl_layout.addSpacing(20)
+        
+        self.btn_start = QPushButton("START")
+        self.btn_start.setObjectName("Primary")
+        self.btn_start.setFixedSize(100, 45)
+        
+        self.btn_stop = QPushButton("STOP")
+        self.btn_stop.setObjectName("Danger")
+        self.btn_stop.setFixedSize(100, 45)
+        
+        ctrl_layout.addWidget(self.btn_start)
+        ctrl_layout.addWidget(self.btn_stop)
+        
+        ctrl_layout.addStretch()
+        
+        self.btn_info = QPushButton("Patient Admin")
+        self.btn_info.setFixedWidth(120)
+        ctrl_layout.addWidget(self.btn_info)
+        
+        main_vbox.addWidget(control_bar)
+        
+        self.btn_exercise.clicked.connect(self.select_exercise)
+        self.btn_start.clicked.connect(self.toggle_start)
+        self.btn_stop.clicked.connect(self.stop_process)
+        self.btn_info.clicked.connect(self.auth_patient_menu)
+        
+        self.thread = CameraThread()
+        self.thread.change_pixmap_signal.connect(self.update_image)
+        self.thread.start()
+        
+        self.is_running = False
+
+    def select_exercise(self):
+        items = ("Squats", "Lunges", "Leg Raise")
+        item, ok = QInputDialog.getItem(self, "Exercise", "Select:", items, 0, False)
+        if ok and item:
+            self.lbl_status.setText(f"Selected: {item}")
+
+    def toggle_start(self):
+        self.is_running = not self.is_running
+        self.btn_start.setText("PAUSE" if self.is_running else "RESUME")
+        self.lbl_status.setText("Tracking Active" if self.is_running else "Tracking Paused")
+
+    def stop_process(self):
+        self.is_running = False
+        self.btn_start.setText("START")
+        self.lbl_status.setText("Session Stopped")
+
+    def auth_patient_menu(self):
+        pwd, ok = QInputDialog.getText(self, "Admin Access", "Enter Password:", QLineEdit.EchoMode.Password)
+        if ok and pwd == "1234":
+            try:
+                self.thread.change_pixmap_signal.disconnect()
+            except:
+                pass
+            
+            self.thread.stop()
+            
+            self.dashboard = PatientDashboard(self)
+            self.dashboard.exec()
+            
+            self.thread = CameraThread()
+            self.thread.change_pixmap_signal.connect(self.update_image)
+            self.thread.start()
+            
+        elif ok:
+            QMessageBox.warning(self, "Access Denied", "Incorrect Password")
+
+    @pyqtSlot(QImage)
+    def update_image(self, qt_img):
+        if qt_img:
+            scaled_pixmap = QPixmap.fromImage(qt_img).scaled(
+                self.feed_label.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            self.feed_label.setPixmap(scaled_pixmap)
+
+    def closeEvent(self, event):
+        if self.thread:
+            self.thread.stop()
+        event.accept()
+
+# --- ENTRY POINT ---
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    app.setStyleSheet(ModernTheme.STYLESHEET)
+    
+    app.setWindowIcon(create_app_icon())
+    
+    terms = TermsDialog()
+    if terms.exec() == QDialog.DialogCode.Accepted:
+        window = MainWindow()
+        window.show()
+        sys.exit(app.exec())
+    else:
+        sys.exit()

@@ -1,0 +1,12 @@
+[
+  {
+    "date": "2026-02-14",
+    "time": "18:06:55",
+    "exercise": "Squats",
+    "duration_seconds": 204.2,
+    "correct_reps": 10,
+    "total_reps": 27,
+    "min_knee_angle": 23.5,
+    "max_knee_angle": 180.0
+  }
+]
