@@ -1,0 +1,60 @@
+{
+  "name": "Mahsa Ghafouri",
+  "id": "123456",
+  "age": "31",
+  "mobile": "",
+  "gender": "Female",
+  "surgeon": "",
+  "physio": "",
+  "height": "",
+  "weight": "",
+  "surgery_date": "",
+  "nutrition": "",
+  "goals": "",
+  "history": "",
+  "meds": "",
+  "videos": [
+    {
+      "path": "patients_assets\\123456\\videos\\Squats_20260215_161700.mp4",
+      "thumb": "patients_assets\\123456\\thumbs\\Squats_20260215_161700.jpg",
+      "exercise": "Squats",
+      "angles": {
+        "knee_min": 46.8,
+        "knee_max": 180.0,
+        "hip_min": 49.6,
+        "hip_max": 179.9
+      }
+    }
+  ],
+  "thresholds": {
+    "squat_knee_down": 90.0,
+    "squat_knee_fwd": 0.05,
+    "seated_ext": 160.0,
+    "seated_flex": 90.0,
+    "slr_min_hip": 140.0
+  },
+  "setup": {
+    "method": "Option 1 (Standard)",
+    "videos": [
+      {
+        "exercise": "Squats",
+        "path": "patients_assets\\123456\\videos\\Squats_20260215_161700.mp4",
+        "thumb": "patients_assets\\123456\\thumbs\\Squats_20260215_161700.jpg",
+        "created_at": "",
+        "notes": "",
+        "angles": {
+          "knee_min": 46.8,
+          "knee_max": 180.0,
+          "hip_min": 49.6,
+          "hip_max": 179.9
+        }
+      }
+    ],
+    "angle_targets": {
+      "angle1": 90.0,
+      "angle2": 0.0,
+      "angle3": 0.0,
+      "angle4": 0.0
+    }
+  }
+}

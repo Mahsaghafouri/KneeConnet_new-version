@@ -1,0 +1,42 @@
+[
+  {
+    "date": "2026-02-15",
+    "time": "09:52:38",
+    "exercise": "Squats",
+    "duration_seconds": 26.9,
+    "correct_reps": 0,
+    "total_reps": 0,
+    "min_knee_angle": 0,
+    "max_knee_angle": 0.0
+  },
+  {
+    "date": "2026-02-15",
+    "time": "12:20:01",
+    "exercise": "Squats",
+    "duration_seconds": 75.6,
+    "correct_reps": 7,
+    "total_reps": 8,
+    "min_knee_angle": 82.0,
+    "max_knee_angle": 180.0
+  },
+  {
+    "date": "2026-02-15",
+    "time": "12:21:25",
+    "exercise": "Seated Knee Bending",
+    "duration_seconds": 73.8,
+    "correct_reps": 1,
+    "total_reps": 10,
+    "min_knee_angle": 65.6,
+    "max_knee_angle": 180.0
+  },
+  {
+    "date": "2026-02-15",
+    "time": "16:19:05",
+    "exercise": "Squats",
+    "duration_seconds": 30.4,
+    "correct_reps": 0,
+    "total_reps": 0,
+    "min_knee_angle": 38.8,
+    "max_knee_angle": 180.0
+  }
+]

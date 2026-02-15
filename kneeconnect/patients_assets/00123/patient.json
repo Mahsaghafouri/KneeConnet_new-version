@@ -1,0 +1,84 @@
+{
+  "name": "Ali Gh",
+  "id": "00123",
+  "age": "20",
+  "mobile": "",
+  "gender": "Male",
+  "surgeon": "",
+  "physio": "",
+  "height": "",
+  "weight": "",
+  "surgery_date": "",
+  "nutrition": "",
+  "goals": "",
+  "history": "",
+  "meds": "",
+  "videos": [
+    {
+      "path": "patients_assets\\00123\\videos\\Squats_20260215_155459.mp4",
+      "thumb": "patients_assets\\00123\\thumbs\\Squats_20260215_155459.jpg",
+      "exercise": "Squats",
+      "angles": {
+        "knee_min": 172.9,
+        "knee_max": 178.4,
+        "hip_min": 174.6,
+        "hip_max": 180.0
+      }
+    },
+    {
+      "path": "patients_assets\\00123\\videos\\Squats_20260215_155510.mp4",
+      "thumb": "patients_assets\\00123\\thumbs\\Squats_20260215_155510.jpg",
+      "exercise": "Squats",
+      "angles": {
+        "knee_min": 173.4,
+        "knee_max": 179.9,
+        "hip_min": 171.7,
+        "hip_max": 178.6
+      }
+    }
+  ],
+  "setup": {
+    "method": "Option 1 (Standard)",
+    "videos": [
+      {
+        "exercise": "Squats",
+        "path": "patients_assets\\00123\\videos\\Squats_20260215_155459.mp4",
+        "thumb": "patients_assets\\00123\\thumbs\\Squats_20260215_155459.jpg",
+        "created_at": "",
+        "notes": "",
+        "angles": {
+          "knee_min": 172.9,
+          "knee_max": 178.4,
+          "hip_min": 174.6,
+          "hip_max": 180.0
+        }
+      },
+      {
+        "exercise": "Squats",
+        "path": "patients_assets\\00123\\videos\\Squats_20260215_155510.mp4",
+        "thumb": "patients_assets\\00123\\thumbs\\Squats_20260215_155510.jpg",
+        "created_at": "",
+        "notes": "",
+        "angles": {
+          "knee_min": 173.4,
+          "knee_max": 179.9,
+          "hip_min": 171.7,
+          "hip_max": 178.6
+        }
+      }
+    ],
+    "angle_targets": {
+      "angle1": 90.0,
+      "angle2": 0.0,
+      "angle3": 0.0,
+      "angle4": 0.0
+    }
+  },
+  "thresholds": {
+    "squat_knee_down": 90.0,
+    "squat_knee_fwd": 0.05,
+    "seated_ext": 160.0,
+    "seated_flex": 90.0,
+    "slr_min_hip": 140.0
+  }
+}
