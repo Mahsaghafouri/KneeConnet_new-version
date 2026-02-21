@@ -19,7 +19,7 @@ opencv-python==4.13.0.92
 opt_einsum==3.4.0
 packaging==26.0
 pillow==12.1.1
-protobuf==4.25.8
+protobuf==6.33.5
 pycparser==3.0
 pyparsing==3.3.2
 PyQt6==6.10.2
