@@ -10,7 +10,7 @@ jax==0.9.0.1
 jaxlib==0.9.0.1
 kiwisolver==1.4.9
 matplotlib==3.10.8
-mediapipe==0.10.14
+mediapipe==0.10.32
 ml_dtypes==0.5.4
 msvc_runtime==14.44.35112
 numpy==2.4.2
